@@ -40,10 +40,12 @@ def save_audio_to_mongodb(file_path, filename, song_metadata):
         with open(file_path, "rb") as f:
             file_id = fs.put(f, filename=filename)
         
-        # Add metadata (including timestamp)
+       
         song_metadata["filename"] = filename
-        song_metadata["file_id"] = str(file_id)  # Convert ObjectId to string
+        song_metadata["file_id"] = str(file_id) 
         song_metadata["stored_date"] = datetime.utcnow().isoformat()
+        song_metadata["playlist_name"] = song_metadata.get("playlist_name", "") 
+        song_metadata["bpm"] = song_metadata.get("bpm", 0) 
 
         # Save metadata to MongoDB
         song_entry_id = songs_collection.insert_one(song_metadata).inserted_id
