@@ -1,5 +1,6 @@
 from audiomix import *
 from Ai_DJ_DB import *
+from random_song import *
 from pydub import AudioSegment
 import numpy as np
 from flask import Flask,jsonify,request,send_file,send_from_directory
@@ -14,6 +15,8 @@ CORS(app)
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
+ml_model = AIDJ()
+ml_model.load_model()
 
 song_paths = {}
 tempo = {}
@@ -21,8 +24,8 @@ key = {}
 
 @app.route('/api/mix_songs', methods=['GET'])
 def mix_song():
-    if song_paths["file1"] != None and song_paths["file2"] != None:
-        output = main(song_paths["file1"], song_paths["file2"])
+    if os.listdir("uploads"):
+        output = main("uploads/song1.mp3", "uploads/song2.mp3")
 
         files = os.listdir('uploads')
         for file in files:
@@ -38,8 +41,8 @@ def upload_files():
     file1 = request.files["file1"]
     file2 = request.files["file2"]
     if file1 and file1.filename.endswith(".mp3") and file2 and file2.filename.endswith(".mp3"):
-        song1_path = os.path.join(UPLOAD_FOLDER, file1.filename)
-        song2_path = os.path.join(UPLOAD_FOLDER, file2.filename)
+        song1_path = os.path.join(UPLOAD_FOLDER, "song1.mp3")
+        song2_path = os.path.join(UPLOAD_FOLDER, "song2.mp3")
         file1.save(song1_path)
         file2.save(song2_path)
 
@@ -57,6 +60,9 @@ def save_to_db():
     file1 = request.files["file1"]
     file2 = request.files["file2"]
     logging.info("Saving song to mongoDB ")
+    song1_name,_ = os.path.splitext(os.path.basename(file1.filename))
+    song2_name,_ = os.path.splitext(os.path.basename(file2.filename))
+    song_name = song1_name + "X" + song2_name
 
     song_metadata = {
             "original_songs": [os.path.basename(file1.filename), os.path.basename(file2.filename)],
@@ -64,19 +70,21 @@ def save_to_db():
             "tempo2": float(tempo["file2"][0]) if isinstance(tempo["file2"], np.ndarray) else float(tempo["file2"]),
             "key1": int(key["file1"]),
             "key2": int(key["file2"]),
+            "playlist_name": "Remixes",
             "transition_point": float(transition_point)
         }
-    if(save_audio_to_mongodb("temp/mixed_output.mp3", "mixed_output_test.mp3", song_metadata) != None):
+    if(save_audio_to_mongodb("temp/mixed_output.mp3", song_name, song_metadata) != None):
         return jsonify({"message": "Song sucessfully saved"})
     else:
         return jsonify({"message": "Unable to save song"}), 400
     
-@app.route('/api/list_songs', methods=['GET'])
-def list_songs():
+@app.route('/api/list_songs/<playlist>', methods=['GET'])
+def list_songs(playlist):
     logging.info("Getting list from mongoDB ")
     songs = list_stored_files()
-    logging.info(songs)
-    return jsonify(songs)
+    playlist = [entry for entry in songs if entry["playlist_name"] == playlist]
+    logging.info(playlist)
+    return jsonify(playlist)
 
 @app.route('/api/get_song_db/<filename>', methods=['GET'])
 def get_song_db(filename):
@@ -91,7 +99,33 @@ def delete_song_db(filename):
         return jsonify({"message": "Song sucessfully deleted"})
     else:
         return jsonify({"message": "Unable to delete song"}), 400
+    
 
+@app.route('/api/move_song/<filename>/<playlist_name>', methods=['GET'])
+def move_song(filename,playlist_name):
+    logging.info("Moving song to different playlist from mongoDB ")
+    if(update_playlist(filename,playlist_name)):
+        return jsonify({"message": "Song sucessfully moved"})
+    else:
+        return jsonify({"message": "Unable to move song"}), 400
+    
+@app.route('/api/random_song', methods=['GET'])
+def random_song():
+    logging.info("Randomly selecting song")
+    song1,song2 = ml_model.recommend_next_track()
+    logging.info(song1)
+    logging.info(song2)
+    return jsonify({
+        "song_1": f"/test_songs/{song1}",
+        "song_2": f"/test_songs/{song2}"
+    })
+
+@app.route('/test_songs/<path:filename>')
+def serve_test_songs(filename):
+    try:
+        return send_from_directory('test_songs', filename)
+    except FileNotFoundError:
+        return jsonify({"error": "File not found"}), 404
 
 
 def main(file_path1, file_path2):

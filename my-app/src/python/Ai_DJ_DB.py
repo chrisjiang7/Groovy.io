@@ -77,8 +77,8 @@ def list_stored_files():
     """
     List all stored files in MongoDB.
     """
-    files = songs_collection.find({}, {"filename": 1, "stored_date": 1})
-    return [{"filename": file["filename"], "stored_date": file["stored_date"]} for file in files]
+    files = songs_collection.find({}, {"filename": 1, "stored_date": 1, "playlist_name": 1})
+    return [{"filename": file["filename"], "stored_date": file["stored_date"], "playlist_name": file["playlist_name"]} for file in files]
 
 def delete_song(filename):
     """Delete a song from the database"""
@@ -94,6 +94,22 @@ def delete_song(filename):
     except Exception as e:
         logging.info(f"Error deleting song: {str(e)}")
         return False
+    
+def update_playlist(filename,playlist_name):
+    """
+    Update playlist metadata for a given song to move playlist
+    """
+    try:
+        query = {"filename": filename}  # Find document by filename
+        update = {"$set": {"playlist_name": playlist_name}}  # Update metadata
+        result = songs_collection.update_one(query, update)
+        if result.modified_count > 0:
+            logging.info("Update successful")
+        else:
+            logging.info("Not updated")
+    except Exception as e:
+        logging.info(f"Error updating song: {str(e)}")
+
 
 if __name__ == "__main__":
     # Example retrieval

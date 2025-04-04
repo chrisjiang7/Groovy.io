@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useContext  } from "react";
 import { useParams, useLocation, useNavigate } from "react-router-dom"; 
 import { MdPlayArrow, MdDelete, MdPause, MdVolumeUp, MdVolumeOff } from "react-icons/md";
 import { mdiArrowLeftTopBold } from "@mdi/js"; 
 import Icon from "@mdi/react"; 
+import { usePlaylists } from "./PlaylistContext"
 
 const Playlist_page = () => {
   const { id } = useParams();
@@ -15,15 +16,16 @@ const Playlist_page = () => {
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1);
   const audioRef = useRef(null);
-
   const playlistName = location.state?.name || "Unknown Playlist";
+  const { playlists  } = usePlaylists();
+  const [selectedPlaylists, setSelectedPlaylists] = useState({});
 
   useEffect(() => {
-    list_songs();
+    list_songs(playlistName);
   }, []);
 
-  const list_songs = () => {
-    fetch("http://127.0.0.1:5000/api/list_songs")
+  const list_songs = (playlist_name) => {
+    fetch(`http://127.0.0.1:5000/api/list_songs/${playlist_name}`)
       .then((response) => response.json())
       .then((data) => setData(data))
       .catch((error) => console.error("Error fetching songs:", error));
@@ -43,8 +45,16 @@ const Playlist_page = () => {
 
   const delete_song_db = (filename) => {
     fetch(`http://127.0.0.1:5000/api/delete_song_db/${filename}`)
-      .then(() => list_songs())
+      .then((response) => response.json())
+      .then(() => list_songs(playlistName))
       .catch((error) => console.error("Delete error:", error));
+  };
+
+  const move_song = (filename,playlist_name) => {
+    fetch(`http://127.0.0.1:5000/api/move_song/${filename}/${playlist_name}`)
+      .then((response) => response.json())
+      .then(() => list_songs(playlistName))
+      .catch((error) => console.error("Move error:", error));
   };
 
   const closePlayer = () => {
@@ -78,8 +88,20 @@ const Playlist_page = () => {
     setVolume(newVolume);
   };
 
+  const handleSelectChange = (e, filename) => {
+    const selectedId = e.target.value;
+    const selectedPlaylist = playlists.find((pl) => pl.id === parseInt(selectedId));
+    if (selectedPlaylist) {
+      setSelectedPlaylists((prevState) => ({
+        ...prevState,
+        [filename]: selectedId, 
+      }));
+      move_song(filename, selectedPlaylist.name);
+    }
+  };
+
   return (
-    <div className="max-w-3xl mx-auto p-6 bg-gray-900 text-white rounded-lg shadow-lg">
+    <div className="max-w-3x1 mx-auto p-6 bg-gray-900 text-white rounded-lg shadow-lg">
       {/* Return to Playlists Button */}
       <button
         onClick={() => navigate("/playlists")} 
@@ -109,6 +131,15 @@ const Playlist_page = () => {
                       className="text-red-400 cursor-pointer hover:text-red-300 text-2xl"
                       onClick={() => delete_song_db(item.filename)}
                     />
+                    <select className="ml-2 p-1 border rounded bg-gray-900" defaultValue=""
+                      value={selectedPlaylists[item.filename] || ""}
+                      onChange={(e) => handleSelectChange(e, item.filename)}
+                    > 
+                      <option className="text-white" value="" disabled>Move to...</option>
+                      {playlists.map((pl) => (
+                        <option key={pl.id} value={pl.id}>{pl.name}</option>
+                      ))}
+                    </select>
                   </div>
                 </li>
               ))}

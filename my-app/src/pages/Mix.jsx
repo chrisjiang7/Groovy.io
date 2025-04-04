@@ -132,6 +132,25 @@ const Mix = () => {
       .catch((error) => console.error("Upload error:", error));
   };
 
+  const random_song = () => {
+    fetch("http://127.0.0.1:5000/api/random_song")
+    .then(response => response.json())
+    .then(data => {
+      fetchAndUploadSong(`http://localhost:5000${data.song_1}`, 1);
+      fetchAndUploadSong(`http://localhost:5000${data.song_2}`, 2);
+    })
+    .catch((error) => console.error("Random song select error:", error));
+  };
+
+  const fetchAndUploadSong = async (url, songNumber) => {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    const filename = url.split("/").pop(); // get filename from URL
+  
+    const file = new File([blob], filename, { type: blob.type });
+    handleSongUpload({ target: { files: [file] } }, songNumber);
+  };
+
   return (
     <div className="flex flex-col items-center p-8 pb-24 w-full">
       <h1 className="text-4xl font-bold text-purple-400 mb-8">Mix Your Songs</h1>
@@ -160,15 +179,25 @@ const Mix = () => {
         </div>
 
         {/* Mix Button */}
-        <button
-          onClick={handleMix}
-          className={`bg-cyan-500 text-white font-semibold py-3 px-6 rounded-2xl transition-all duration-300 hover:bg-cyan-600 ${
-            !(song1 && song2) || mixing ? "opacity-50 cursor-not-allowed" : ""
-          }`}
-          disabled={!(song1 && song2) || mixing}
-        >
-          Mix Songs
-        </button>
+        <div className="flex w-max gap-4">
+          <button
+            onClick={handleMix}
+            className={`bg-cyan-500 text-white font-semibold py-3 px-6 rounded-2xl transition-all duration-300 hover:bg-cyan-600 ${
+              !(song1 && song2) || mixing ? "opacity-50 cursor-not-allowed" : ""
+            }`}
+            disabled={!(song1 && song2) || mixing}
+          >
+            Mix Songs
+          </button>
+
+          <button
+            className="bg-cyan-500 text-white font-semibold py-3 px-6 rounded-2xl transition-all duration-300 hover:bg-cyan-600"
+            onClick={random_song}
+          >
+            I'm feeling lucky
+          </button>
+        </div>
+
 
         {/* Mix Progress Bar */}
         {mixing && (
