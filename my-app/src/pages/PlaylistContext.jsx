@@ -17,14 +17,14 @@ export const PlaylistProvider = ({ children }) => {
     { id: 10, name: "wedding" },
     { id: 11, name: "graduation" },
     { id: 12, name: "2023 hits" },
-    { id: 5, name: "random songs" },
-    { id: 6, name: "2022 hits" },
-    { id: 7, name: "throwbacks" },
-    { id: 8, name: "2021 hits" },
-    { id: 9, name: "2020 favorites" },
-    { id: 10, name: "covid era" },
-    { id: 11, name: "2019 throwbacks" },
-    { id: 12, name: "2019 hits" }
+    { id: 13, name: "random songs" },
+    { id: 14, name: "2022 hits" },
+    { id: 15, name: "throwbacks" },
+    { id: 16, name: "2021 hits" },
+    { id: 17, name: "2020 favorites" },
+    { id: 18, name: "covid era" },
+    { id: 19, name: "2019 throwbacks" },
+    { id: 20, name: "2019 hits" }
     //add more to test scrollbar functionality
   ]);
 

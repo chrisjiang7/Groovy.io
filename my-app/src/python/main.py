@@ -18,6 +18,8 @@ UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 ml_model = AIDJ()
+#ml_model.build_music_graph()
+#ml_model.save_model()
 ml_model.load_model()
 
 song_paths = {}
@@ -82,7 +84,7 @@ def save_to_db():
             "playlist_name": "Remixes",
             "transition_point": float(transition_point)
         }
-    if(save_audio_to_mongodb("temp/mixed_output.mp3", song_name, song_metadata) != None):
+    if(save_audio_to_mongodb("temp/mixed_song.mp3", song_name, song_metadata) != None):
         return jsonify({"message": "Song sucessfully saved"})
     else:
         return jsonify({"message": "Unable to save song"}), 400
@@ -238,4 +240,4 @@ def main(file_path1, file_path2):
             os.remove(tempo_adjusted_path)
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=True, use_reloader=False)
