@@ -141,14 +141,14 @@ def main(file_path1, file_path2):
     global transition_point
     try:
         logging.info("Analyzing songs...")
-        tempo1, beats1, y1, sr1, key1, energy1, energy_times1 = analyze_audio(file_path1)
-        tempo2, beats2, y2, sr2, key2, energy2, energy_times2 = analyze_audio(file_path2)
+        tempo["file1"], beats1, y1, sr1, key["file1"], energy1, energy_times1 = analyze_audio(file_path1)
+        tempo["file2"], beats2, y2, sr2, key["file2"], energy2, energy_times2 = analyze_audio(file_path2)
 
-        tempo1 = float(tempo1[0] if isinstance(tempo1, np.ndarray) else tempo1)
-        tempo2 = float(tempo2[0] if isinstance(tempo2, np.ndarray) else tempo2)
+        tempo1 = float(tempo["file1"][0] if isinstance(tempo["file1"], np.ndarray) else tempo["file1"])
+        tempo2 = float(tempo["file2"][0] if isinstance(tempo["file2"], np.ndarray) else tempo["file2"])
 
-        logging.info(f"Song 1: Tempo={tempo1:.1f} BPM | Key={key1} | Duration={len(y1)/sr1:.1f}s")
-        logging.info(f"Song 2: Tempo={tempo2:.1f} BPM | Key={key2} | Duration={len(y2)/sr2:.1f}s")
+        logging.info(f"Song 1: Tempo={tempo1:.1f} BPM | Key={key["file1"]} | Duration={len(y1)/sr1:.1f}s")
+        logging.info(f"Song 2: Tempo={tempo2:.1f} BPM | Key={key["file2"]} | Duration={len(y2)/sr2:.1f}s")
 
         adjusted_tempo2 = tempo1
         logging.info(f"Adjusting Song 2 tempo from {tempo2:.1f} to {adjusted_tempo2:.1f} BPM")
