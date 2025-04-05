@@ -7,6 +7,8 @@ from flask import Flask,jsonify,request,send_file,send_from_directory
 from flask_cors import CORS
 import os
 import logging
+import warnings
+
 logging.basicConfig(level=logging.INFO)
 
 app = Flask(__name__)
@@ -21,6 +23,13 @@ ml_model.load_model()
 song_paths = {}
 tempo = {}
 key = {}
+
+#global variables for main()
+MIN_INTRO_DURATION = 30
+MIN_FADE_DURATION = 5000
+MAX_FADE_DURATION = 20000
+
+warnings.filterwarnings("ignore", message="FP16 is not supported on CPU; using FP32 instead")
 
 @app.route('/api/mix_songs', methods=['GET'])
 def mix_song():
@@ -130,45 +139,103 @@ def serve_test_songs(filename):
 
 def main(file_path1, file_path2):
     global transition_point
-    # Analyze songs
-    logging.info("Analyzing songs...")
-    tempo["file1"], beats1, y1, sr1, key["file1"], energy1, energy_times1 = analyze_audio(file_path1)
-    tempo["file2"], beats2, y2, sr2, key["file2"], energy2, energy_times2 = analyze_audio(file_path2)
-
-    logging.info(f"Song 1: Tempo={tempo['file1']} BPM, Key={key['file1']}, Duration={len(y1) / sr1} seconds")
-    logging.info(f"Song 2: Tempo={tempo['file2']} BPM, Key={key['file2']}, Duration={len(y2) / sr2} seconds")
-
-    logging.info("Finding transition points...")
-    transitions = find_transition_points_dynamic(beats1, beats2, energy1, energy_times1, min_transition_time=15.0)
-
-    if transitions:
-        transition_point = transitions[0][0]  # Use the first detected transition point
-        logging.info(f"Transition point at: {transition_point} seconds")
-    else:
-        logging.info("No transition points found.")
-        return
-
-    # Load the songs
-    logging.info("Loading songs...")
     try:
+        logging.info("Analyzing songs...")
+        tempo1, beats1, y1, sr1, key1, energy1, energy_times1 = analyze_audio(file_path1)
+        tempo2, beats2, y2, sr2, key2, energy2, energy_times2 = analyze_audio(file_path2)
+
+        tempo1 = float(tempo1[0] if isinstance(tempo1, np.ndarray) else tempo1)
+        tempo2 = float(tempo2[0] if isinstance(tempo2, np.ndarray) else tempo2)
+
+        logging.info(f"Song 1: Tempo={tempo1:.1f} BPM | Key={key1} | Duration={len(y1)/sr1:.1f}s")
+        logging.info(f"Song 2: Tempo={tempo2:.1f} BPM | Key={key2} | Duration={len(y2)/sr2:.1f}s")
+
+        adjusted_tempo2 = tempo1
+        logging.info(f"Adjusting Song 2 tempo from {tempo2:.1f} to {adjusted_tempo2:.1f} BPM")
+        tempo_adjusted_path = "temp/temp_adjusted.wav"
+        create_tempo_adjusted_version(file_path2, tempo_adjusted_path, tempo2, adjusted_tempo2)
+        song2_adjusted = AudioSegment.from_file(tempo_adjusted_path)
+
+        logging.info("Analyzing lyrics...")
+        lyrics1 = get_lyrics_with_cache(file_path1)
+        lyrics2 = get_lyrics_with_cache(tempo_adjusted_path)
+
+        lines1 = group_lyrics_into_lines(lyrics1)
+        lines2 = group_lyrics_into_lines(lyrics2)
+
+        duration1 = len(y1) / sr1
+        duration2 = len(song2_adjusted) / 1000
+
+        non_lyric1 = find_non_lyric_intervals(lines1, duration1)
+        non_lyric2 = find_non_lyric_intervals(lines2, duration2)
+
+        logging.info("Finding optimal transition point...")
+        fade_duration, transition_point = find_best_fade_window(
+            filter_non_intro_beats(beats1),
+            non_lyric1,
+            tempo1,
+            energy1,
+            energy_times1
+        )
+
+        if transition_point is None:
+            logging.warning("No valid transition point found.")
+            return None
+
+        fade_duration = max(MIN_FADE_DURATION, min(MAX_FADE_DURATION, int(fade_duration)))
+        beats_fade = fade_duration / 1000 * tempo1 / 60
+        logging.info(f"Auto-selected: {fade_duration/1000:.1f}s fade (~{beats_fade:.1f} beats) at {transition_point:.1f}s")
+
         song1 = AudioSegment.from_file(file_path1)
-        song2 = AudioSegment.from_file(file_path2)
-        logging.info("Successfully loaded both songs")
-    except Exception as e:
-        logging.info(f"Error loading songs: {str(e)}")
-        return
+        required_duration = fade_duration / 1000
+        current_duration = next((end - start for start, end in non_lyric1 if start <= transition_point <= end), 0)
 
-    # Mixing audio
-    logging.info("Mixing audio...")
-    try:
-        mixed_song = dynamic_crossfade(song1, song2, transition_point)  # Use the tempo-adjusted version
-        output_file = "temp/mixed_song.mp3"
-        mixed_song.export(output_file, format="mp3")
-        logging.info(f"Mixed audio saved as {output_file}")
-        return output_file
-        
-    except ValueError as e:
-        logging.info(e)
+        if current_duration < required_duration:
+            logging.info(f"Extending section from {current_duration:.1f}s to {required_duration:.1f}s via looping")
+            song1_extended, transition_point = extend_with_loop(
+                song1,
+                max(0, transition_point - current_duration/2),
+                min(duration1, transition_point + current_duration/2),
+                required_duration
+            )
+        else:
+            song1_extended = song1
+
+        safe_beats2 = get_safe_transition_points(
+            filter_non_intro_beats(beats2),
+            non_lyric2,
+            fade_duration / 1000
+        )
+
+        if not safe_beats2:
+            logging.warning("No safe transition points found in second song")
+            return None
+
+        target_beat = transition_point * tempo2 / tempo1
+        song2_beat = min(safe_beats2, key=lambda x: abs(x - target_beat))
+        logging.info(f"Matching beat in Song 2: {song2_beat:.1f}s (target was {target_beat:.1f}s)")
+
+        logging.info("Mixing audio...")
+        mixed_song = dynamic_crossfade(
+            song1_extended,
+            song2_adjusted,
+            transition_point,
+            fade_duration,
+            os.path.basename(file_path1),
+            os.path.basename(file_path2)
+        )
+
+        output_path = "temp/mixed_song.mp3"
+        mixed_song.export(output_path, format="mp3")
+        logging.info(f"Mixed song saved as {output_path}")
+        return output_path
+
+    except Exception as e:
+        logging.error(f"Error during processing: {str(e)}")
+        return None
+    finally:
+        if 'tempo_adjusted_path' in locals() and os.path.exists(tempo_adjusted_path):
+            os.remove(tempo_adjusted_path)
 
 if __name__ == "__main__":
     app.run(debug=True)
