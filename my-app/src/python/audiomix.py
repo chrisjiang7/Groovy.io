@@ -1,6 +1,12 @@
 from pydub import AudioSegment
 import librosa
 import numpy as np
+import whisper
+import pickle
+import os
+import soundfile as sf
+
+MIN_INTRO_DURATION = 30
 
 # 1. Analyze Audio Features
 def analyze_audio(file_path):
@@ -8,107 +14,160 @@ def analyze_audio(file_path):
     tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr)
     beats = librosa.frames_to_time(beat_frames, sr=sr)
     chroma = librosa.feature.chroma_stft(y=y, sr=sr)
-    key = np.argmax(np.mean(chroma, axis=1))  # Simplistic key detection
+    key = np.argmax(np.mean(chroma, axis=1))
     energy = librosa.feature.rms(y=y)[0]
     energy_times = librosa.frames_to_time(range(len(energy)), sr=sr)
     return tempo, beats, y, sr, key, energy, energy_times
 
-# 2. Dynamic Beat Matching
-def find_transition_points_dynamic(beats1, beats2, energy1, energy_times1, threshold_factor=0.1, min_transition_time=10.0):
-    """
-    Find transition points between two songs, ensuring they are not too early.
-    """
-    transition_points = []
-    avg_interval1 = np.mean(np.diff(beats1)) if len(beats1) > 1 else 0.5
-    avg_interval2 = np.mean(np.diff(beats2)) if len(beats2) > 1 else 0.5
-    threshold = min(avg_interval1, avg_interval2) * threshold_factor
+# tempo adjustment with librosa
+def create_tempo_adjusted_version(input_file, output_file, original_tempo, target_tempo):
+    y, sr = librosa.load(input_file, sr=None)
+    speed_factor = target_tempo / original_tempo
+    print(f"Original tempo: {original_tempo:.2f}, Target tempo: {target_tempo:.2f}, Speed factor: {speed_factor:.3f}")
+    y_stretched = librosa.effects.time_stretch(y, rate=speed_factor)
+    sf.write(output_file, y_stretched, sr)
+    print(f"Tempo-adjusted audio saved as {output_file}")
 
-    # Only consider beats after min_transition_time
-    beats1_filtered = [beat for beat in beats1 if beat >= min_transition_time]
-    beats2_filtered = [beat for beat in beats2 if beat >= min_transition_time]
 
-    for beat1 in beats1_filtered:
-        for beat2 in beats2_filtered:
-            if abs(beat1 - beat2) < threshold:
-                transition_points.append((beat1, beat2))
+# Lyrics
 
-    return transition_points
+def extract_lyrics_with_timings(audio_path: str, model_size: str = "tiny"):
+    model = whisper.load_model(model_size)
+    result = model.transcribe(audio_path, word_timestamps=True)
 
-# 3. Custom fade curve generation
-def custom_fade_curve(length, curve_type='linear'):
-    if curve_type == 'logarithmic':
-        return np.logspace(0, -1, length)
-    elif curve_type == 'linear':
-        return np.linspace(1, 0, length)
-    else:
-        raise ValueError("Unsupported curve type")
+    lyrics = []
+    for segment in result["segments"]:
+        for word in segment["words"]:
+            lyrics.append({
+                "word": word["word"],
+                "start": word["start"],
+                "end": word["end"],
+                "confidence": word.get("probability", 0)
+            })
+    return lyrics
 
-# 4. Apply fade curve to audio samples
-def apply_fade(samples, fade_curve):
-    faded_samples = samples * fade_curve
-    return faded_samples
+def group_lyrics_into_lines(word_timings, max_pause=0.5):
+    lines = []
+    current_line = []
+    for word in word_timings:
+        if not current_line or word["start"] - current_line[-1]["end"] <= max_pause:
+            current_line.append(word)
+        else:
+            lines.append({
+                "text": " ".join(w["word"] for w in current_line),
+                "start": current_line[0]["start"],
+                "end": current_line[-1]["end"],
+                "words": current_line
+            })
+            current_line = [word]
+    if current_line:
+        lines.append({
+            "text": " ".join(w["word"] for w in current_line),
+            "start": current_line[0]["start"],
+            "end": current_line[-1]["end"],
+            "words": current_line
+        })
+    return lines
 
-# 5. Dynamic Crossfade
-def dynamic_crossfade(song1, song2, transition_point, fade_duration=3000, song1_name="Song 1", song2_name="Song 2"):
-    """
-    Apply dynamic crossfade between song1 and song2 at the given transition point.
-    :param song1: AudioSegment for song 1
-    :param song2: AudioSegment for song 2
-    :param transition_point: Time (in seconds) where the transition happens
-    :param fade_duration: Duration of the fade in milliseconds
-    :param song1_name: Name of song 1 (for print statement)
-    :param song2_name: Name of song 2 (for print statement)
-    :return: Mixed AudioSegment
-    """
-    # Convert transition point to milliseconds
-    transition_point_ms = transition_point * 1000
+def find_non_lyric_intervals(lyric_lines, total_duration, min_gap=0.5):
+    non_lyric_intervals = []
+    prev_end = 0.0
+    for line in lyric_lines:
+        if line["start"] > prev_end:
+            if non_lyric_intervals and (line["start"] - prev_end) < min_gap:
+                prev_start, _ = non_lyric_intervals.pop()
+                non_lyric_intervals.append((prev_start, line["start"]))
+            else:
+                non_lyric_intervals.append((prev_end, line["start"]))
+        prev_end = line["end"]
+    if prev_end < total_duration:
+        non_lyric_intervals.append((prev_end, total_duration))
+    return non_lyric_intervals
 
-    # Ensure both songs are long enough for the crossfade
-    if transition_point_ms + fade_duration > len(song1):
-        raise ValueError(f"{song1_name} does not have enough data for crossfade at the transition point.")
-    if transition_point_ms + fade_duration > len(song2):
-        raise ValueError(f"{song2_name} does not have enough data for crossfade at the transition point.")
-    
-    # Slice the last part of song1 that will fade out
-    fade_out_start = transition_point_ms - fade_duration
-    fade_out_end = transition_point_ms
-    fade_out_segment = song1[fade_out_start:fade_out_end]
-    fade_out_segment = fade_out_segment.fade_out(fade_duration)
-    fade_out_segment.export(f"temp/fade_out_{song1_name}.mp3", format="mp3")  # Export fade-out part
-    
-    # Set `fade_in_start` to the desired starting point (e.g., 50 seconds in song2)
-    fade_in_start = 56 * 1000  # 50 seconds converted to milliseconds
-    fade_in_end = min(fade_in_start + fade_duration, len(song2))
-    fade_in_segment = song2[fade_in_start:fade_in_end]
-    fade_in_segment = fade_in_segment.fade_in(fade_duration)
-    fade_in_segment.export(f"temp/fade_in_{song2_name}.mp3", format="mp3")  # Export fade-in part
-    
-    # Ensure the first part doesn't include the fade-out segment
-    first_part = song1[:fade_out_start]  # This part ends right before the fade-out
-    first_part.export(f"temp/first_part_{song1_name}.mp3", format="mp3")  # Export first part
-    
-    # The second part is from song2 after the fade-in
-    second_part = song2[fade_in_end:]  # After the fade-in
-    second_part.export(f"temp/second_part_{song2_name}.mp3", format="mp3")  # Export second part
+def get_lyrics_with_cache(file_path, model_size="tiny"):
+    cache_file = f"{file_path}.{model_size}.v1.lyrics_cache"
+    if os.path.exists(cache_file):
+        with open(cache_file, 'rb') as f:
+            return pickle.load(f)
+    lyrics = extract_lyrics_with_timings(file_path, model_size)
+    with open(cache_file, 'wb') as f:
+        pickle.dump(lyrics, f)
+    return lyrics
 
-    # Function to convert seconds to minutes and seconds
-    def seconds_to_min_sec(seconds):
-        minutes = seconds // 60
-        seconds = seconds % 60
-        return f"{int(minutes)}m {int(seconds)}s"
+def filter_non_intro_beats(beats):
+    return [beat for beat in beats if beat >= MIN_INTRO_DURATION]
 
-    # Print the start times of each segment with source information
-    print(f"Transition Point: {transition_point:.2f} seconds")
-    print(f"First Part of {song1_name} starts at: {seconds_to_min_sec(first_part.duration_seconds)}")
-    print(f"Fade Out Segment (from {song1_name}) starts at: {seconds_to_min_sec(fade_out_start / 1000)}")
-    print(f"Fade In Segment (from {song2_name}) starts at: {seconds_to_min_sec(fade_in_start / 1000)}")
-    print(f"Second Part of {song2_name} starts at: {seconds_to_min_sec(second_part.duration_seconds)}")
+def find_closest_beat(beats, target_time):
+    return min(beats, key=lambda x: abs(x - target_time))
 
-    # Combine all parts together with the fade-out and fade-in segments
-    mixed_song = first_part + fade_out_segment + fade_in_segment + second_part
-    
-    # Save the mixed song to file
-    mixed_song.export("temp/mixed_output.mp3", format="mp3")
-    print("Mixed audio saved as mixed_output.mp3")
-    
-    return mixed_song
+def calculate_optimal_fade(tempo, energy, current_time, energy_times, beats):
+    base_fade_beats = 4
+    current_energy = np.interp(current_time, energy_times, energy)
+    energy_factor = 1.5 - (current_energy / np.max(energy))
+    fade_beats = base_fade_beats * energy_factor
+    beat_duration = 60 / tempo
+    fade_duration = max(2, min(16, fade_beats * beat_duration))
+    return fade_duration * 1000
+
+def find_best_fade_window(beats, non_lyric_intervals, tempo, energy, energy_times):
+    candidate_points = []
+    for interval_start, interval_end in non_lyric_intervals:
+        if interval_end - interval_start < 2:
+            continue
+        interval_beats = [b for b in beats if interval_start <= b <= interval_end]
+        for beat in interval_beats:
+            potential_fade = calculate_optimal_fade(
+                tempo, energy, beat, energy_times, beats
+            ) / 1000
+            fade_start = beat - (potential_fade/2)
+            fade_end = beat + (potential_fade/2)
+            if fade_start >= interval_start and fade_end <= interval_end:
+                energy_score = 1 - abs(0.5 - (np.interp(beat, energy_times, energy)/np.max(energy)))
+                duration_score = min(1, potential_fade/8)
+                score = energy_score * duration_score
+                candidate_points.append((score, beat, potential_fade))
+    if not candidate_points:
+        return None, None
+    best_candidate = max(candidate_points, key=lambda x: x[0])
+    return best_candidate[2] * 1000, best_candidate[1]
+
+def get_safe_transition_points(beats, non_lyric_intervals, fade_duration):
+    safe_beats = []
+    for beat in beats:
+        window_start = beat - fade_duration/2
+        window_end = beat + fade_duration/2
+        if window_start < 0:
+            continue
+        for interval_start, interval_end in non_lyric_intervals:
+            if interval_start <= window_start and window_end <= interval_end:
+                safe_beats.append(beat)
+                break
+    return safe_beats
+
+def extend_with_loop(audio_segment, interval_start, interval_end, target_duration):
+    loop_duration = interval_end - interval_start
+    loop_segment = audio_segment[interval_start*1000 : interval_end*1000]
+    needed_loops = int(np.ceil((target_duration - loop_duration) / loop_duration))
+    extended = loop_segment * needed_loops
+    transition_point = interval_end
+    before = audio_segment[:interval_start*1000]
+    after = audio_segment[interval_end*1000:]
+    return before + extended + after, transition_point
+
+def dynamic_crossfade(song1, song2, transition_point, fade_duration, song1_name="Song 1", song2_name="Song 2"):
+    fade_duration = int(round(fade_duration))
+    transition_ms = int(round(transition_point * 1000))
+    fade_out_start = max(0, transition_ms - fade_duration)
+    fade_out_end = transition_ms
+    fade_in_end = min(len(song2), fade_duration)
+
+    if fade_out_start >= len(song1):
+        raise ValueError(f"Transition point {transition_point:.1f}s is too late in {song1_name} (duration: {len(song1)/1000:.1f}s)")
+    if fade_in_end > len(song2):
+        raise ValueError(f"Fade duration {fade_duration}ms too long for {song2_name} (duration: {len(song2)/1000:.1f}s)")
+
+    fading_out = song1[fade_out_start:fade_out_end].fade_out(fade_duration)
+    fading_in = song2[:fade_in_end].fade_in(fade_duration)
+    crossfade_segment = fading_out.overlay(fading_in)
+
+    return song1[:fade_out_start] + crossfade_segment + song2[fade_in_end:]
