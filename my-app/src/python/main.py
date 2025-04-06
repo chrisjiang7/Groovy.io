@@ -146,32 +146,35 @@ def main(file_path1, file_path2):
         os.makedirs("temp", exist_ok=True)
         os.makedirs("test_songs", exist_ok=True)
 
-        # Convert to WAV (threaded)
         song1_wav = os.path.join("temp", "song1.wav")
         song2_wav = os.path.join("temp", "song2.wav")
 
         #print("\n=== Converting to WAV ===")
-        t1, r1 = threaded_run(convert_to_wav, file_path1, song1_wav)
-        t2, r2 = threaded_run(convert_to_wav, file_path2, song2_wav)
+        t1, _ = threaded_run(convert_to_wav, file_path1, song1_wav)
+        t2, _ = threaded_run(convert_to_wav, file_path2, song2_wav)
         t1.join(); t2.join()
 
         #print("\n=== Analyzing Songs in Parallel ===")
         t3, r3 = threaded_run(analyze_audio, song1_wav)
         t4, r4 = threaded_run(analyze_audio, song2_wav)
         t3.join(); t4.join()
-        tempo1, beats1, y1, sr1, key1, energy1, energy_times1 = r3["value"]
-        tempo2, beats2, y2, sr2, key2, energy2, energy_times2 = r4["value"]
 
-        tempo1 = float(tempo1[0] if isinstance(tempo1, np.ndarray) else tempo1)
-        tempo2 = float(tempo2[0] if isinstance(tempo2, np.ndarray) else tempo2)
+        tempo = {}
+        key = {}
+
+        tempo["file1"], beats1, y1, sr1, key["file1"], energy1, energy_times1 = r3["value"]
+        tempo["file2"], beats2, y2, sr2, key["file2"], energy2, energy_times2 = r4["value"]
+
+        tempo1 = float(tempo["file1"][0] if isinstance(tempo["file1"], np.ndarray) else tempo["file1"])
+        tempo2 = float(tempo["file2"][0] if isinstance(tempo["file2"], np.ndarray) else tempo["file2"])
 
         #print(f"\nSong 1: {os.path.basename(file_path1)}")
-        #print(f"  Tempo: {tempo1:.1f} BPM | Key: {to_camelot(key1)} | Duration: {len(y1)/sr1:.1f}s")
+        #print(f"  Tempo: {tempo1:.1f} BPM | Key: {to_camelot(key['file1'])} | Duration: {len(y1)/sr1:.1f}s")
         #print(f"\nSong 2: {os.path.basename(file_path2)}")
-        #print(f"  Tempo: {tempo2:.1f} BPM | Key: {to_camelot(key2)} | Duration: {len(y2)/sr2:.1f}s")
+        #print(f"  Tempo: {tempo2:.1f} BPM | Key: {to_camelot(key['file2'])} | Duration: {len(y2)/sr2:.1f}s")
 
-        if abs(key1 - key2) not in [0, 1, 11]:
-            #print("Warning: Keys may be harmonically incompatible")
+        if abs(key["file1"] - key["file2"]) not in [0, 1, 11]:
+            print("Warning: Keys may be harmonically incompatible")
 
         #print("\n=== Adjusting Tempo ===")
         adjusted_tempo2 = tempo1
@@ -251,7 +254,6 @@ def main(file_path1, file_path2):
 
         #print(f"Matching beat in Song 2: {song2_beat:.2f}s (target: {target_beat:.2f}s)")
 
-        # Cue melody early
         song2_beat = max(0, song2_beat - 16 * (60 / tempo1))
         #print(f"Adjusted Song 2 entry earlier: {song2_beat:.2f}s")
 
