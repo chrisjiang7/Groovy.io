@@ -2,13 +2,13 @@ from pydub import AudioSegment
 from pydub.effects import low_pass_filter, high_pass_filter
 import librosa
 import numpy as np
-import whisper
+from faster_whisper import WhisperModel
 import pickle
 import os
 import soundfile as sf
 from pydub.utils import get_array_type
 from array import array
-import logging
+import threading
 logging.basicConfig(level=logging.INFO)
 
 MIN_INTRO_DURATION = 30
@@ -45,20 +45,20 @@ def create_tempo_adjusted_version(input_file, output_file, original_tempo, targe
     rate = original_tempo / target_tempo
     rate = np.clip(rate, 0.85, 1.15)  #clamp for quality
 
-    logging.info(f"\n=== Time Stretching ===")
-    logging.info(f"Original Tempo: {original_tempo:.2f} BPM")
-    logging.info(f"Target Tempo:   {target_tempo:.2f} BPM")
-    logging.info(f"Stretch Rate:   {rate:.3f}")
+    print(f"\n=== Time Stretching ===")
+    print(f"Original Tempo: {original_tempo:.2f} BPM")
+    print(f"Target Tempo:   {target_tempo:.2f} BPM")
+    print(f"Stretch Rate:   {rate:.3f}")
     
     if using_rubberband:
-        logging.info("Using Rubber Band for high-quality stretching")
+        print("Using Rubber Band for high-quality stretching")
         y_stretched = rubberband.time_stretch(y, sr, rate,)
     else:
-        logging.info("Rubber Band not found. Falling back to Librosa (lower quality)")
+        print("Rubber Band not found. Falling back to Librosa (lower quality)")
         y_stretched = librosa.effects.time_stretch(y, rate)
 
     sf.write(output_file, y_stretched, sr)
-    logging.info(f"Tempo-adjusted audio saved to: {output_file}")
+    print(f"Tempo-adjusted audio saved to: {output_file}")
 
 def custom_fade_curve(length, direction='out', curve_type='ease_in_out'):
     t = np.linspace(0, 1, length)
@@ -130,17 +130,19 @@ def dynamic_crossfade(song1, song2, transition_point, fade_duration, song1_name=
         )
 
 # Whisper Lyrics
-def extract_lyrics_with_timings(audio_path: str, model_size: str = "tiny"):
-    model = whisper.load_model(model_size)
-    result = model.transcribe(audio_path, word_timestamps=True)
+def extract_lyrics_with_timings(audio_path, model_size="tiny"):
+    print("Using faster-whisper for lyrics analysis...")
+    model = WhisperModel(model_size, compute_type="int8")  # "int8" = fastest CPU mode
+    segments, _ = model.transcribe(audio_path, word_timestamps=True)
+
     lyrics = []
-    for segment in result["segments"]:
-        for word in segment["words"]:
+    for segment in segments:
+        for word in segment.words:
             lyrics.append({
-                "word": word["word"],
-                "start": word["start"],
-                "end": word["end"],
-                "confidence": word.get("probability", 0)
+                "word": word.word,
+                "start": word.start,
+                "end": word.end,
+                "confidence": word.probability,
             })
     return lyrics
 
@@ -181,6 +183,19 @@ def find_non_lyric_intervals(lyric_lines, total_duration, min_gap=0.5):
     if prev_end < total_duration:
         non_lyric_intervals.append((prev_end, total_duration))
     return non_lyric_intervals
+
+def find_phrase_starts(lyric_lines, bar_duration, min_pause=1.5):
+    """
+    Returns estimated phrase start times based on gaps between lyric lines.
+    Rounds each to the nearest bar to encourage musical alignment.
+    """
+    phrase_starts = []
+    for i in range(1, len(lyric_lines)):
+        gap = lyric_lines[i]["start"] - lyric_lines[i - 1]["end"]
+        if gap >= min_pause:
+            bar_start = round(lyric_lines[i]["start"] / bar_duration) * bar_duration
+            phrase_starts.append(bar_start)
+    return phrase_starts
 
 def get_lyrics_with_cache(file_path, model_size="tiny"):
     base_name = os.path.basename(file_path)
@@ -265,3 +280,13 @@ def extend_with_loop(audio_segment, interval_start, interval_end, target_duratio
     before = audio_segment[:interval_start*1000]
     after = audio_segment[interval_end*1000:]
     return before + extended + after, transition_point
+
+def threaded_run(func, *args):
+    result = {}
+
+    def wrapper():
+        result["value"] = func(*args)
+
+    thread = threading.Thread(target=wrapper)
+    thread.start()
+    return thread, result
