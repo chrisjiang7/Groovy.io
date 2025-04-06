@@ -9,6 +9,7 @@ import soundfile as sf
 from pydub.utils import get_array_type
 from array import array
 import threading
+import logging
 logging.basicConfig(level=logging.INFO)
 
 MIN_INTRO_DURATION = 30

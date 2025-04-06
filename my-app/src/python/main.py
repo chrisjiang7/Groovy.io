@@ -159,9 +159,6 @@ def main(file_path1, file_path2):
         t4, r4 = threaded_run(analyze_audio, song2_wav)
         t3.join(); t4.join()
 
-        tempo = {}
-        key = {}
-
         tempo["file1"], beats1, y1, sr1, key["file1"], energy1, energy_times1 = r3["value"]
         tempo["file2"], beats2, y2, sr2, key["file2"], energy2, energy_times2 = r4["value"]
 
@@ -178,7 +175,7 @@ def main(file_path1, file_path2):
 
         #print("\n=== Adjusting Tempo ===")
         adjusted_tempo2 = tempo1
-        tempo_adjusted_path = os.path.join("test_songs", "tempo_adjusted.wav")
+        tempo_adjusted_path = os.path.join("temp", "tempo_adjusted.wav")
         create_tempo_adjusted_version(song2_wav, tempo_adjusted_path, tempo2, adjusted_tempo2)
         song2_adjusted = AudioSegment.from_file(tempo_adjusted_path)
 
@@ -268,7 +265,7 @@ def main(file_path1, file_path2):
             song2_beat
         )
 
-        output_path = os.path.join("test_songs", "mixed_song.mp3")
+        output_path = os.path.join("temp", "mixed_song.mp3")
         mixed_song.export(output_path, format="mp3")
         #print(f"\nMixed song saved to: {output_path}")
         #print(f"Total duration: {len(mixed_song)/1000:.1f} seconds")
@@ -278,7 +275,7 @@ def main(file_path1, file_path2):
         #print(f"\nError: {str(e)}")
         return None
     finally:
-        for temp_file in ["temp/song1.wav", "temp/song2.wav", "test_songs/tempo_adjusted.wav"]:
+        for temp_file in ["temp/song1.wav", "temp/song2.wav", "temp/tempo_adjusted.wav"]:
             if os.path.exists(temp_file):
                 os.remove(temp_file)
 
