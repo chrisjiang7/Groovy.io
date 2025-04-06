@@ -8,6 +8,7 @@ from flask_cors import CORS
 import os
 import logging
 import warnings
+import shutil
 
 logging.basicConfig(level=logging.INFO)
 
@@ -145,39 +146,51 @@ def main(file_path1, file_path2):
         os.makedirs("temp", exist_ok=True)
         os.makedirs("test_songs", exist_ok=True)
 
-        # Convert to WAV to avoid MP3 stretching issues
+        # Convert to WAV (threaded)
         song1_wav = os.path.join("temp", "song1.wav")
         song2_wav = os.path.join("temp", "song2.wav")
-        convert_to_wav(file_path1, song1_wav)
-        convert_to_wav(file_path2, song2_wav)
 
-        #print("\n=== Analyzing Songs ===")
-        tempo["file1"], beats1, y1, sr1, key["file1"], energy1, energy_times1 = analyze_audio(song1_wav)
-        tempo["file2"], beats2, y2, sr2, key["file2"], energy2, energy_times2 = analyze_audio(song2_wav)
+        #print("\n=== Converting to WAV ===")
+        t1, r1 = threaded_run(convert_to_wav, file_path1, song1_wav)
+        t2, r2 = threaded_run(convert_to_wav, file_path2, song2_wav)
+        t1.join(); t2.join()
 
-        tempo1 = float(tempo["file1"][0] if isinstance(tempo["file1"], np.ndarray) else tempo["file1"])
-        tempo2 = float(tempo["file2"][0] if isinstance(tempo["file2"], np.ndarray) else tempo["file2"])
+        #print("\n=== Analyzing Songs in Parallel ===")
+        t3, r3 = threaded_run(analyze_audio, song1_wav)
+        t4, r4 = threaded_run(analyze_audio, song2_wav)
+        t3.join(); t4.join()
+        tempo1, beats1, y1, sr1, key1, energy1, energy_times1 = r3["value"]
+        tempo2, beats2, y2, sr2, key2, energy2, energy_times2 = r4["value"]
+
+        tempo1 = float(tempo1[0] if isinstance(tempo1, np.ndarray) else tempo1)
+        tempo2 = float(tempo2[0] if isinstance(tempo2, np.ndarray) else tempo2)
 
         #print(f"\nSong 1: {os.path.basename(file_path1)}")
         #print(f"  Tempo: {tempo1:.1f} BPM | Key: {to_camelot(key1)} | Duration: {len(y1)/sr1:.1f}s")
         #print(f"\nSong 2: {os.path.basename(file_path2)}")
         #print(f"  Tempo: {tempo2:.1f} BPM | Key: {to_camelot(key2)} | Duration: {len(y2)/sr2:.1f}s")
 
-        if abs(key["file1"] - key["file2"]) not in [0, 1, 11]:
-            logging.info("Warning: Keys may be harmonically incompatible")
+        if abs(key1 - key2) not in [0, 1, 11]:
+            #print("Warning: Keys may be harmonically incompatible")
 
         #print("\n=== Adjusting Tempo ===")
         adjusted_tempo2 = tempo1
-        tempo_adjusted_path = os.path.join("temp", "tempo_adjusted.wav")
+        tempo_adjusted_path = os.path.join("test_songs", "tempo_adjusted.wav")
         create_tempo_adjusted_version(song2_wav, tempo_adjusted_path, tempo2, adjusted_tempo2)
         song2_adjusted = AudioSegment.from_file(tempo_adjusted_path)
 
-        #print("\n=== Analyzing Lyrics ===")
-        lyrics1 = get_lyrics_with_cache(song1_wav)
-        lyrics2 = get_lyrics_with_cache(tempo_adjusted_path)
+        #print("\n=== Analyzing Lyrics in Parallel ===")
+        t5, r5 = threaded_run(get_lyrics_with_cache, song1_wav)
+        t6, r6 = threaded_run(get_lyrics_with_cache, tempo_adjusted_path)
+        t5.join(); t6.join()
+        lyrics1 = r5["value"]
+        lyrics2 = r6["value"]
 
         lines1 = group_lyrics_into_lines(lyrics1)
         lines2 = group_lyrics_into_lines(lyrics2)
+
+        bar_duration = 4 * (60 / tempo1)
+        phrase_starts1 = find_phrase_starts(lines1, bar_duration)
 
         duration1 = len(y1) / sr1
         duration2 = len(song2_adjusted) / 1000
@@ -186,31 +199,37 @@ def main(file_path1, file_path2):
         non_lyric2 = find_non_lyric_intervals(lines2, duration2)
 
         #print("\n=== Finding Transition ===")
-        fade_duration, transition_point = find_best_fade_window(
-            filter_non_intro_beats(beats1),
-            non_lyric1,
-            tempo1,
-            energy1,
-            energy_times1
-        )
+        beats_after_intro = filter_non_intro_beats(beats1)
+        phrase_beats = [b for b in beats_after_intro if any(abs(b - p) < 0.5 for p in phrase_starts1)]
+
+        fade_duration = None
+        transition_point = None
+
+        if phrase_beats:
+            #print(f"Trying {len(phrase_beats)} phrase-aligned beats...")
+            fade_duration, transition_point = find_best_fade_window(phrase_beats, non_lyric1, tempo1, energy1, energy_times1)
 
         if transition_point is None:
-            logging.info("No valid transition point found in Song 1.")
+            #print("Fallback: using full beat list for transition search.")
+            fade_duration, transition_point = find_best_fade_window(beats_after_intro, non_lyric1, tempo1, energy1, energy_times1)
+
+        if transition_point is None:
+            #print("No valid transition point found in Song 1.")
             return None
 
-        transition_point = find_closest_beat(beats1, transition_point)
-        logging.info(f"Quantized transition point to nearest beat: {transition_point:.2f}s")
+        transition_point = round(transition_point / bar_duration) * bar_duration
+        #print(f"Quantized transition point to nearest bar: {transition_point:.2f}s")
 
         fade_duration = max(MIN_FADE_DURATION, min(MAX_FADE_DURATION, int(fade_duration)))
         beats_fade = fade_duration / 1000 * tempo1 / 60
-        logging.info(f"Auto-selected: {fade_duration/1000:.1f}s fade (~{beats_fade:.1f} beats)")
+        #print(f"Auto-selected: {fade_duration/1000:.1f}s fade (~{beats_fade:.1f} beats)")
 
         song1 = AudioSegment.from_file(song1_wav)
         required_duration = fade_duration / 1000
         current_duration = next((end - start for start, end in non_lyric1 if start <= transition_point <= end), 0)
 
         if current_duration < required_duration:
-            logging.info(f"Extending section from {current_duration:.1f}s to {required_duration:.1f}s via looping")
+            #print(f"Extending section from {current_duration:.1f}s to {required_duration:.1f}s via looping")
             song1_extended, transition_point = extend_with_loop(
                 song1,
                 max(0, transition_point - current_duration/2),
@@ -220,27 +239,23 @@ def main(file_path1, file_path2):
         else:
             song1_extended = song1
 
-        safe_beats2 = get_safe_transition_points(
-            filter_non_intro_beats(beats2),
-            non_lyric2,
-            fade_duration / 1000
-        )
-
+        safe_beats2 = get_safe_transition_points(filter_non_intro_beats(beats2), non_lyric2, fade_duration / 1000)
         target_beat = transition_point * tempo2 / tempo1
 
         if not safe_beats2:
-            logging.info("No safe transition points found in song 2 — falling back to 4-bar entry")
-            if len(beats2) > 16:
-                song2_beat = beats2[16]
-                logging.info(f"Using beat 16 (~4 bars): {song2_beat:.2f}s")
-            else:
-                song2_beat = 0
+            #print("No safe transition points found in song 2 — falling back to 4-bar entry")
+            song2_beat = beats2[16] if len(beats2) > 16 else 0
         else:
-            song2_beat = min(safe_beats2, key=lambda x: abs(x - target_beat))
+            bar_aligned_beats = [b for b in safe_beats2 if abs(b % bar_duration) < 0.3]
+            song2_beat = min(bar_aligned_beats or safe_beats2, key=lambda x: abs(x - target_beat))
 
-        logging.info(f"Matching beat in Song 2: {song2_beat:.1f}s (target was {target_beat:.1f}s)")
+        #print(f"Matching beat in Song 2: {song2_beat:.2f}s (target: {target_beat:.2f}s)")
 
-        logging.info("\n=== Mixing Songs ===")
+        # Cue melody early
+        song2_beat = max(0, song2_beat - 16 * (60 / tempo1))
+        #print(f"Adjusted Song 2 entry earlier: {song2_beat:.2f}s")
+
+        #print("\n=== Mixing Songs ===")
         mixed_song = dynamic_crossfade(
             song1_extended,
             song2_adjusted,
@@ -251,18 +266,17 @@ def main(file_path1, file_path2):
             song2_beat
         )
 
-        output_path = os.path.join("temp", "mixed_song.mp3")
+        output_path = os.path.join("test_songs", "mixed_song.mp3")
         mixed_song.export(output_path, format="mp3")
-        logging.info(f"\nMixed song saved to: {output_path}")
-        logging.info(f"Total duration: {len(mixed_song)/1000:.1f} seconds")
+        #print(f"\nMixed song saved to: {output_path}")
+        #print(f"Total duration: {len(mixed_song)/1000:.1f} seconds")
         return output_path
 
     except Exception as e:
-        logging.info(f"\nError: {str(e)}")
+        #print(f"\nError: {str(e)}")
         return None
     finally:
-        # Clean up temporary files
-        for temp_file in ["temp/song1.wav", "temp/song2.wav", "temp/tempo_adjusted.wav"]:
+        for temp_file in ["temp/song1.wav", "temp/song2.wav", "test_songs/tempo_adjusted.wav"]:
             if os.path.exists(temp_file):
                 os.remove(temp_file)
 
