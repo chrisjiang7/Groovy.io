@@ -8,6 +8,8 @@ import os
 import soundfile as sf
 from pydub.utils import get_array_type
 from array import array
+import logging
+logging.basicConfig(level=logging.INFO)
 
 MIN_INTRO_DURATION = 30
 
@@ -43,20 +45,20 @@ def create_tempo_adjusted_version(input_file, output_file, original_tempo, targe
     rate = original_tempo / target_tempo
     rate = np.clip(rate, 0.85, 1.15)  #clamp for quality
 
-    print(f"\n=== Time Stretching ===")
-    print(f"Original Tempo: {original_tempo:.2f} BPM")
-    print(f"Target Tempo:   {target_tempo:.2f} BPM")
-    print(f"Stretch Rate:   {rate:.3f}")
+    logging.info(f"\n=== Time Stretching ===")
+    logging.info(f"Original Tempo: {original_tempo:.2f} BPM")
+    logging.info(f"Target Tempo:   {target_tempo:.2f} BPM")
+    logging.info(f"Stretch Rate:   {rate:.3f}")
     
     if using_rubberband:
-        print("Using Rubber Band for high-quality stretching")
+        logging.info("Using Rubber Band for high-quality stretching")
         y_stretched = rubberband.time_stretch(y, sr, rate,)
     else:
-        print("Rubber Band not found. Falling back to Librosa (lower quality)")
+        logging.info("Rubber Band not found. Falling back to Librosa (lower quality)")
         y_stretched = librosa.effects.time_stretch(y, rate)
 
     sf.write(output_file, y_stretched, sr)
-    print(f"Tempo-adjusted audio saved to: {output_file}")
+    logging.info(f"Tempo-adjusted audio saved to: {output_file}")
 
 def custom_fade_curve(length, direction='out', curve_type='ease_in_out'):
     t = np.linspace(0, 1, length)

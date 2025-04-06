@@ -183,9 +183,9 @@ const Mix = () => {
           <button
             onClick={handleMix}
             className={`bg-cyan-500 text-white font-semibold py-3 px-6 rounded-2xl transition-all duration-300 hover:bg-cyan-600 ${
-              !(song1 && song2) || mixing ? "opacity-50 cursor-not-allowed" : ""
+              !(song1 && song2) ? "opacity-50 cursor-not-allowed" : ""
             }`}
-            disabled={!(song1 && song2) || mixing}
+            disabled={!(song1 && song2)}
           >
             Mix Songs
           </button>
