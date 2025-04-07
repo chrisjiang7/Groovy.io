@@ -1,6 +1,9 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import logo from '../assets/logo.png';
+import { createUserWithEmailAndPassword } from "firebase/auth";
+import { doc, setDoc } from "firebase/firestore";
+import { auth, db } from "../firebase";
+import logo from "../assets/logo.png";
 
 const SignUp = () => {
   const [username, setUsername] = useState("");
@@ -9,27 +12,39 @@ const SignUp = () => {
   const [confirmPassword, setConfirmPassword] = useState("");
   const navigate = useNavigate();
 
-  const handleSignUp = (e) => {
+  const handleSignUp = async (e) => {
     e.preventDefault();
-
+  
     if (!username.trim() || !email.trim() || !password.trim() || !confirmPassword.trim()) {
       alert("Please fill out all fields.");
       return;
     }
-
+  
     if (password !== confirmPassword) {
       alert("Passwords do not match.");
       return;
     }
-
-    alert("Account created successfully!");
-    navigate("/");
+  
+    try {
+      await createUserWithEmailAndPassword(auth, email, password);
+      
+      
+      alert("Account created successfully! You can now log in.");
+  
+      
+      setTimeout(() => {
+        navigate("/");
+      }, 1500);
+  
+    } catch (error) {
+      console.error("Sign-up error:", error);
+      alert("Failed to create account: " + error.message);
+    }
   };
 
   return (
     <div className="flex items-center justify-center min-h-screen w-screen bg-gradient-to-b from-black to-gray-900 text-white p-4">
       <div className="w-full max-w-lg bg-gray-800 p-10 rounded-2xl shadow-xl flex flex-col items-center gap-3">
-
         <img
           src={logo}
           alt="Groovy Logo"
@@ -63,7 +78,6 @@ const SignUp = () => {
             onChange={(e) => setPassword(e.target.value)}
           />
 
-          {/* confirm pass */}
           <input
             type="password"
             placeholder="Confirm Password"

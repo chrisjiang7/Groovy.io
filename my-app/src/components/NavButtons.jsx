@@ -12,29 +12,31 @@ const NavButtons = () => {
   ];
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 flex justify-center gap-6 p-4 bg-black/30 backdrop-blur-lg rounded-t-2xl shadow-lg">
-      {buttons.map((btn) => {
-        const isActive = 
-          btn.path === "/playlists"
-            ? location.pathname.startsWith("/playlists") // Match both `/playlists` and `/playlists/:id`
-            : location.pathname === btn.path;
+    <div className="fixed bottom-0 left-0 right-0 z-50 bg-[#1a1a1a] border-t border-cyan-900 shadow-[0_-1px_10px_rgba(0,0,0,0.5)]">
+      <div className="flex justify-around items-center py-3 max-w-md mx-auto">
+        {buttons.map((btn) => {
+          const isActive = 
+            btn.path === "/playlists"
+              ? location.pathname.startsWith("/playlists")
+              : location.pathname === btn.path;
 
-        return (
-          <Link
-            key={btn.label}
-            to={btn.path}
-            className={`flex items-center gap-2 px-5 py-2 rounded-2xl shadow-md transition-all duration-200
-              ${
-                isActive
-                  ? "bg-cyan-600 scale-105 shadow-lg" // Active state
-                  : "bg-purple-600/90 hover:bg-purple-700 hover:scale-105 hover:shadow-lg" // Default/hover states
-              }`}
-          >
-            {btn.icon}
-            <span className="text-sm font-medium">{btn.label}</span>
-          </Link>
-        );
-      })}
+          return (
+            <Link
+              key={btn.label}
+              to={btn.path}
+              className={`flex flex-col items-center gap-1 px-3 py-1 rounded-xl text-xs transition-all duration-200
+                ${
+                  isActive
+                    ? "bg-cyan-800 text-white scale-105 shadow-md"
+                    : "text-purple-300 hover:text-white hover:scale-105"
+                }`}
+            >
+              {btn.icon}
+              <span>{btn.label}</span>
+            </Link>
+          );
+        })}
+      </div>
     </div>
   );
 };

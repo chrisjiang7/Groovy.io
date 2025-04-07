@@ -194,7 +194,7 @@ const Mix = () => {
             className="bg-cyan-500 text-white font-semibold py-3 px-6 rounded-2xl transition-all duration-300 hover:bg-cyan-600"
             onClick={random_song}
           >
-            I'm feeling lucky
+            Randomized Mix!
           </button>
         </div>
 

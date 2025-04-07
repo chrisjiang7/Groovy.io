@@ -14,6 +14,7 @@
     "@mdi/js": "^7.4.47",
     "@mdi/react": "^1.6.1",
     "autoprefixer": "^10.0.0",
+    "firebase": "^11.6.0",
     "framer-motion": "^12.5.0",
     "lucide-react": "^0.482.0",
     "postcss": "^8.0.0",
