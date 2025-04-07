@@ -159,6 +159,9 @@ def main(file_path1, file_path2):
         t4, r4 = threaded_run(analyze_audio, song2_wav)
         t3.join(); t4.join()
 
+        tempo = {}
+        key = {}
+
         tempo["file1"], beats1, y1, sr1, key["file1"], energy1, energy_times1 = r3["value"]
         tempo["file2"], beats2, y2, sr2, key["file2"], energy2, energy_times2 = r4["value"]
 
@@ -169,9 +172,6 @@ def main(file_path1, file_path2):
         #print(f"  Tempo: {tempo1:.1f} BPM | Key: {to_camelot(key['file1'])} | Duration: {len(y1)/sr1:.1f}s")
         #print(f"\nSong 2: {os.path.basename(file_path2)}")
         #print(f"  Tempo: {tempo2:.1f} BPM | Key: {to_camelot(key['file2'])} | Duration: {len(y2)/sr2:.1f}s")
-
-        if abs(key["file1"] - key["file2"]) not in [0, 1, 11]:
-            print("Warning: Keys may be harmonically incompatible")
 
         #print("\n=== Adjusting Tempo ===")
         adjusted_tempo2 = tempo1
@@ -210,12 +210,13 @@ def main(file_path1, file_path2):
             fade_duration, transition_point = find_best_fade_window(phrase_beats, non_lyric1, tempo1, energy1, energy_times1)
 
         if transition_point is None:
-            #print("Fallback: using full beat list for transition search.")
-            fade_duration, transition_point = find_best_fade_window(beats_after_intro, non_lyric1, tempo1, energy1, energy_times1)
+            # Fallback to end of Song 1
+            fade_duration = MIN_FADE_DURATION
+            transition_point = (len(y1) / sr1) - (fade_duration / 1000)
 
-        if transition_point is None:
-            #print("No valid transition point found in Song 1.")
-            return None
+            # Ensure transition point is not negative
+            if transition_point < 0:
+                transition_point = 0
 
         transition_point = round(transition_point / bar_duration) * bar_duration
         #print(f"Quantized transition point to nearest bar: {transition_point:.2f}s")
