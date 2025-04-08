@@ -14,28 +14,35 @@ const SignUp = () => {
 
   const handleSignUp = async (e) => {
     e.preventDefault();
-  
+
     if (!username.trim() || !email.trim() || !password.trim() || !confirmPassword.trim()) {
       alert("Please fill out all fields.");
       return;
     }
-  
+
     if (password !== confirmPassword) {
       alert("Passwords do not match.");
       return;
     }
-  
+
     try {
-      await createUserWithEmailAndPassword(auth, email, password);
-      
-      
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+
+      //save additional user info in Firestore
+      await setDoc(doc(db, "users", user.uid), {
+        username: username,
+        email: email,
+        createdAt: new Date().toISOString(),
+        favoritePlaylist: "None yet",
+        totalRemixes: 0,
+      });
+
       alert("Account created successfully! You can now log in.");
-  
-      
+
       setTimeout(() => {
         navigate("/");
       }, 1500);
-  
     } catch (error) {
       console.error("Sign-up error:", error);
       alert("Failed to create account: " + error.message);

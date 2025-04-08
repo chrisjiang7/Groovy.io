@@ -1,6 +1,8 @@
 import React, { useState, useRef } from "react";
 import { mdiUpload, mdiPlay, mdiStop, mdiDownload, mdiVolumeHigh } from "@mdi/js";
 import Icon from "@mdi/react";
+import { doc, increment, updateDoc } from "firebase/firestore";
+import { auth, db } from "../firebase";
 
 const Mix = () => {
   const [song1, setSong1] = useState(null);
@@ -13,8 +15,7 @@ const Mix = () => {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [data, setData] = useState(null);
-  const [volume, setVolume] = useState(1.0); // New volume state
-
+  const [volume, setVolume] = useState(1.0);
 
   const audioRef = useRef(null);
 
@@ -25,13 +26,11 @@ const Mix = () => {
     }
   };
 
-
   const handleVolumeChange = (e) => {
     const newVolume = parseFloat(e.target.value);
     setVolume(newVolume);
     audioRef.current.volume = newVolume;
   };
-
 
   const handleMix = () => {
     if (song1 && song2) {
@@ -98,20 +97,32 @@ const Mix = () => {
   
     interval = setInterval(() => {
       setProgress((prev) => {
-        if (prev >= 90) return prev; // Don't let it reach 100% yet
+        if (prev >= 90) return prev;
         return prev + 10;
       });
     }, 500);
   
     fetch("http://127.0.0.1:5000/api/mix_songs")
       .then((response) => response.blob())
-      .then((blob) => {
-        clearInterval(interval); // Stop progress updates
+      .then(async (blob) => {
+        clearInterval(interval);
         const url = URL.createObjectURL(blob);
         setAudioUrl(url);
-        setProgress(100); // Only now set to 100%
+        setProgress(100);
         setMixing(false);
         setMixComplete(true);
+        
+        // update remix count in Firestore
+        const user = auth.currentUser;
+        if (user) {
+          try {
+            await updateDoc(doc(db, "users", user.uid), {
+              totalRemixes: increment(1)
+            });
+          } catch (error) {
+            console.error("Error updating remix count:", error);
+          }
+        }
       })
       .catch((error) => {
         clearInterval(interval);
@@ -145,7 +156,7 @@ const Mix = () => {
   const fetchAndUploadSong = async (url, songNumber) => {
     const response = await fetch(url);
     const blob = await response.blob();
-    const filename = url.split("/").pop(); // get filename from URL
+    const filename = url.split("/").pop();
   
     const file = new File([blob], filename, { type: blob.type });
     handleSongUpload({ target: { files: [file] } }, songNumber);
@@ -198,7 +209,6 @@ const Mix = () => {
           </button>
         </div>
 
-
         {/* Mix Progress Bar */}
         {mixing && (
           <div className="w-80 mt-3">
@@ -235,7 +245,6 @@ const Mix = () => {
                 {formatTime(currentTime)} / {formatTime(duration)}
               </p>
 
-               {/*volume control */}
               <input type="range" min="0" max="1" step="0.01" value={volume} onChange={handleVolumeChange} className="w-16 h-2 accent-purple-500" />
               <Icon path={mdiVolumeHigh} size={1} color="#b266ff" />
 
@@ -264,7 +273,6 @@ const Mix = () => {
               onClick={upload_to_db}>
               Add to playlist
             </button>
-
           </div>
         )}
       </div>

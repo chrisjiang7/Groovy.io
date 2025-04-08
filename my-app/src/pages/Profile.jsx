@@ -1,33 +1,110 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { mdiAccountConvert } from "@mdi/js";
 import Icon from "@mdi/react";
+import { auth, db } from "../firebase";
+import { doc, getDoc, updateDoc } from "firebase/firestore";
+import { updateEmail, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
 
 const Profile = () => {
   const navigate = useNavigate();
-
   const [editMode, setEditMode] = useState(false);
-  const [profile, setProfile] = useState({
-    username: "GroovyAdmin",
-    email: "groovytesting123@gmail.com",
-    password: "••••••••",
-    accountCreated: "January 1, 2025",
-    favoritePlaylist: "Workout",
-    totalRemixes: 15,
-  });
+  const [profile, setProfile] = useState(null);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+
+  // Fetch user profile from Firestore
+  useEffect(() => {
+    const fetchProfile = async () => {
+      const user = auth.currentUser;
+      if (!user) return;
+
+      try {
+        const docRef = doc(db, "users", user.uid);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          setProfile({
+            username: data.username || "",
+            email: data.email || user.email || "",
+            password: "••••••••",
+            accountCreated: new Date(data.createdAt).toDateString(),
+            favoritePlaylist: data.favoritePlaylist || "None",
+            totalRemixes: data.totalRemixes || 0,
+          });
+        } else {
+          alert("No profile found for this user.");
+        }
+      } catch (error) {
+        console.error("Error loading profile:", error);
+        alert("Error loading profile.");
+      }
+    };
+
+    fetchProfile();
+  }, []);
 
   const handleChange = (e) => {
     setProfile({ ...profile, [e.target.name]: e.target.value });
   };
 
-  const handleSave = () => {
-    setEditMode(false);
-    //saving logic here
+  const handleSave = async () => {
+    try {
+      const user = auth.currentUser;
+      if (!user) return;
+
+      // Reauthenticate if changing email or password
+      if (profile.email !== user.email || newPassword) {
+        const credential = EmailAuthProvider.credential(
+          user.email,
+          currentPassword
+        );
+        await reauthenticateWithCredential(user, credential);
+      }
+
+      // Update password if new password provided
+      if (newPassword) {
+        if (newPassword !== confirmPassword) {
+          throw new Error("New passwords don't match");
+        }
+        await updatePassword(user, newPassword);
+      }
+
+      // Update email if changed
+      if (profile.email !== user.email) {
+        await updateEmail(user, profile.email);
+      }
+
+      // Update Firestore
+      await updateDoc(doc(db, "users", user.uid), {
+        username: profile.username,
+        email: profile.email,
+      });
+
+      alert("Profile updated successfully!");
+      setEditMode(false);
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch (error) {
+      console.error("Error updating profile:", error);
+      alert("Failed to update profile: " + error.message);
+    }
   };
 
-  const handleLogout = () => {
-    navigate("/"); // back to login page
+  const handleLogout = async () => {
+    await auth.signOut();
+    navigate("/");
   };
+
+  if (!profile) {
+    return (
+      <div className="text-white text-center mt-20 text-xl">
+        Loading your profile...
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col items-center p-8 pb-24 w-full">
@@ -83,15 +160,34 @@ const Profile = () => {
               <label className="block text-sm font-bold text-purple-400 mb-2">Password</label>
               <div className="pb-2 border-b border-gray-700">
                 {editMode ? (
-                  <input
-                    type="password"
-                    name="password"
-                    value={profile.password}
-                    onChange={handleChange}
-                    className="w-full p-2 rounded bg-gray-700 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-                  />
+                  <div className="space-y-4">
+                    <input
+                      type="password"
+                      value={currentPassword}
+                      onChange={(e) => setCurrentPassword(e.target.value)}
+                      className="w-full p-2 rounded bg-gray-700 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      placeholder="Current password (required for changes)"
+                      required
+                    />
+                    <input
+                      type="password"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      className="w-full p-2 rounded bg-gray-700 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      placeholder="New password (leave blank to keep current)"
+                    />
+                    {newPassword && (
+                      <input
+                        type="password"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        className="w-full p-2 rounded bg-gray-700 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        placeholder="Confirm new password"
+                      />
+                    )}
+                  </div>
                 ) : (
-                  <p className="text-lg">{profile.password}</p>
+                  <p className="text-lg">••••••••</p>
                 )}
               </div>
             </div>
@@ -112,7 +208,7 @@ const Profile = () => {
               </div>
             </div>
 
-            {/* Total Remixes Created */}
+            {/* Total Remixes */}
             <div className="flex flex-col">
               <label className="block text-sm font-bold text-purple-400 mb-2">Total Remixes Created</label>
               <div className="pb-2 border-b border-gray-700">
@@ -121,7 +217,7 @@ const Profile = () => {
             </div>
           </div>
 
-          {/* Edit / Save / Cancel Buttons */}
+          {/* Buttons */}
           <div className="flex justify-between items-center mt-2">
             {editMode ? (
               <div className="flex gap-2">
@@ -132,7 +228,12 @@ const Profile = () => {
                   Save
                 </button>
                 <button
-                  onClick={() => setEditMode(false)}
+                  onClick={() => {
+                    setEditMode(false);
+                    setCurrentPassword("");
+                    setNewPassword("");
+                    setConfirmPassword("");
+                  }}
                   className="bg-gray-600 text-white p-2 px-4 rounded-lg hover:bg-gray-500 transition-transform transform hover:scale-105"
                 >
                   Cancel
@@ -147,7 +248,6 @@ const Profile = () => {
               </button>
             )}
 
-            {/* Logout Button */}
             <button
               onClick={handleLogout}
               className="bg-red-500 text-white p-2 px-4 rounded-lg hover:bg-red-600 transition-transform transform hover:scale-105"
