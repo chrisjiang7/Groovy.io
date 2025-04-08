@@ -133,7 +133,7 @@ def dynamic_crossfade(song1, song2, transition_point, fade_duration, song1_name=
 # Whisper Lyrics
 def extract_lyrics_with_timings(audio_path, model_size="tiny"):
     print("Using faster-whisper for lyrics analysis...")
-    model = WhisperModel(model_size, compute_type="int8")  # "int8" = fastest CPU mode
+    model = WhisperModel(model_size, compute_type="int8", device="cpu")
     segments, _ = model.transcribe(audio_path, word_timestamps=True)
 
     lyrics = []
