@@ -133,7 +133,7 @@ def dynamic_crossfade(song1, song2, transition_point, fade_duration, song1_name=
 # Whisper Lyrics
 def extract_lyrics_with_timings(audio_path, model_size="tiny"):
     print("Using faster-whisper for lyrics analysis...")
-    model = WhisperModel(model_size, compute_type="int8", device="cpu")
+    model = WhisperModel(model_size, compute_type="int8")  # "int8" = fastest CPU mode
     segments, _ = model.transcribe(audio_path, word_timestamps=True)
 
     lyrics = []
@@ -274,6 +274,8 @@ def get_safe_transition_points(beats, non_lyric_intervals, fade_duration):
 
 def extend_with_loop(audio_segment, interval_start, interval_end, target_duration):
     loop_duration = interval_end - interval_start
+    if loop_duration <= 0:
+        raise ValueError(f"Invalid loop segment: start={interval_start}, end={interval_end}") 
     loop_segment = audio_segment[interval_start*1000 : interval_end*1000]
     needed_loops = int(np.ceil((target_duration - loop_duration) / loop_duration))
     extended = loop_segment * needed_loops
