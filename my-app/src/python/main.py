@@ -165,11 +165,6 @@ def main(file_path1, file_path2):
         tempo1 = float(tempo["file1"][0] if isinstance(tempo["file1"], np.ndarray) else tempo["file1"])
         tempo2 = float(tempo["file2"][0] if isinstance(tempo["file2"], np.ndarray) else tempo["file2"])
 
-        #print(f"\nSong 1: {os.path.basename(file_path1)}")
-        #print(f"  Tempo: {tempo1:.1f} BPM | Key: {to_camelot(key['file1'])} | Duration: {len(y1)/sr1:.1f}s")
-        #print(f"\nSong 2: {os.path.basename(file_path2)}")
-        #print(f"  Tempo: {tempo2:.1f} BPM | Key: {to_camelot(key['file2'])} | Duration: {len(y2)/sr2:.1f}s")
-
         #print("\n=== Adjusting Tempo ===")
         adjusted_tempo2 = tempo1
         tempo_adjusted_path = os.path.join("temp", "tempo_adjusted.wav")
@@ -212,13 +207,18 @@ def main(file_path1, file_path2):
             transition_point = (len(y1) / sr1) - (fade_duration / 1000)
 
             # Ensure transition point is not negative
-            if transition_point < 0:
-                transition_point = 0
+            if transition_point < MIN_FADE_DURATION / 2000:  # e.g. 2.5s for 5s fade
+                transition_point = MIN_FADE_DURATION / 2000
 
-        transition_point = round(transition_point / bar_duration) * bar_duration
+        if transition_point and bar_duration:
+            transition_point = round(transition_point / bar_duration) * bar_duration
         #print(f"Quantized transition point to nearest bar: {transition_point:.2f}s")
 
-        fade_duration = max(MIN_FADE_DURATION, min(MAX_FADE_DURATION, int(fade_duration)))
+        fade_beats = 16  # or 12 for a 3-bar fade
+        beat_duration = 60 / tempo1
+        fade_duration = int(fade_beats * beat_duration * 1000)
+        fade_duration = max(MIN_FADE_DURATION, min(MAX_FADE_DURATION, fade_duration))
+
         beats_fade = fade_duration / 1000 * tempo1 / 60
         #print(f"Auto-selected: {fade_duration/1000:.1f}s fade (~{beats_fade:.1f} beats)")
 
@@ -227,13 +227,23 @@ def main(file_path1, file_path2):
         current_duration = next((end - start for start, end in non_lyric1 if start <= transition_point <= end), 0)
 
         if current_duration < required_duration:
-            #print(f"Extending section from {current_duration:.1f}s to {required_duration:.1f}s via looping")
-            song1_extended, transition_point = extend_with_loop(
-                song1,
-                max(0, transition_point - current_duration/2),
-                min(duration1, transition_point + current_duration/2),
-                required_duration
-            )
+            interval_start = max(0, transition_point - current_duration / 2)
+            interval_end = min(duration1, transition_point + current_duration / 2)
+
+            # Fallback if the loop is too short
+            if interval_end - interval_start < 1:
+                interval_start = max(0, transition_point - 1)
+                interval_end = transition_point
+
+            if interval_end - interval_start <= 0:
+                song1_extended = song1
+            else:
+                song1_extended, transition_point = extend_with_loop(
+                    song1,
+                    interval_start,
+                    interval_end,
+                    required_duration
+                )
         else:
             song1_extended = song1
 
@@ -249,7 +259,7 @@ def main(file_path1, file_path2):
 
         #print(f"Matching beat in Song 2: {song2_beat:.2f}s (target: {target_beat:.2f}s)")
 
-        song2_beat = max(0, song2_beat - 16 * (60 / tempo1))
+        song2_beat = max(0, song2_beat - 32 * (60 / tempo1))
         #print(f"Adjusted Song 2 entry earlier: {song2_beat:.2f}s")
 
         #print("\n=== Mixing Songs ===")
