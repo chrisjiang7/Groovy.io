@@ -1,6 +1,6 @@
 # 🎧 Groovy.io – AI-Powered DJ Web App
 
-**Groovy.io** is an AI-driven DJ web app that intelligently analyzes two songs and finds the best transition points to mix them seamlessly. It’s designed to mimic how a real DJ thinks about beat-matching, phrasing, energy, and flow — creating smooth, musically-aware transitions in real time.
+**Groovy.io** is an AI-driven DJ web app that intelligently analyzes two songs and finds the best transition points to mix them seamlessly. It’s designed to mimic how a real DJ thinks about beat-matching, phrasing, energy, and flow. Creating smooth, musically-aware transitions in real time.
 
 ## 🚀 Features
 
@@ -23,22 +23,22 @@
 ## 🛠️ Tech Stack
 **Backend & Audio Processing**
 ```text
-**Python** - Core language for audio analysis and mixing/transition logic
-**Flask** - REST API for interfacing with the frontend
-**Rubber Band Library** - High-quality tempo and pitch shifting
-**Faster-Whisper** - Fast and accurate lyrics extraction
-**FFmpeg & Pydub** - Audio decoding, slicing, and mixing
-**Multithreading & Parallel Processing** - Accelerates song analysis and rendering
+Python - Core language for audio analysis and mixing/transition logic
+Flask - REST API for interfacing with the frontend
+Rubber Band Library - High-quality tempo and pitch shifting
+Faster-Whisper - Fast and accurate lyrics extraction
+FFmpeg & Pydub - Audio decoding, slicing, and mixing
+Multithreading & Parallel Processing - Accelerates song analysis and rendering
 ```
 **Frontend**
 ```text
-**React** - Component-based UI for dynamic interaction
-**JavaScript, HTML, CSS** - Standard web technologies
-**Tailwind CSS** - Utility-first CSSS framework for responsive, modern styling
+React - Component-based UI for dynamic interaction
+JavaScript, HTML, CSS - Standard web technologies
+Tailwind CSS - Utility-first CSS framework for responsive, modern styling
 ```
 **Database**
 ```text
-**MongoDB (NoSQL)** - Stores user data, song metadata, and session history
+MongoDB (NoSQL) - Stores user data, song metadata, and session history
 ```
 
 ## 📁 Project Structure
@@ -49,7 +49,7 @@ Groovy.io/
     ├── src/
         ├── assets/          # Icons and images
         ├── components/      # Navigation layout
-        ├── pages/           # All the sites frontend and functionality
+        ├── pages/           # All the site's frontend and functionality
         ├── python/          # Handles audio transitions/mixing and database functions
         ├── App.jsx          # Routing structure for React application
         ├── Index.js         # Entry point of our React application
