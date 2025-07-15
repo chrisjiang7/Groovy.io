@@ -21,20 +21,20 @@
 🔗 [Video](https://youtu.be/XrrPRttvvnA)
 
 ## 🛠️ Tech Stack
-**Backend & Audio Processing**  
-*Python* - Core language for audio analysis and mixing/transition logic  
-*Flask* - REST API for interfacing with the frontend  
+###Backend & Audio Processing  
+**Python** - Core language for audio analysis and mixing/transition logic  
+**Flask** - REST API for interfacing with the frontend  
 **Rubber Band Library** - High-quality tempo and pitch shifting  
 **Faster-Whisper** - Fast and accurate lyrics extraction  
 **FFmpeg & Pydub** - Audio decoding, slicing, and mixing  
 **Multithreading & Parallel Processing** - Accelerates song analysis and rendering  
 
-**Frontend**  
+###Frontend  
 **React** - Component-based UI for dynamic interaction  
 **JavaScript, HTML, CSS** - Standard web technologies  
 **Tailwind CSS** - Utility-first CSS framework for responsive, modern styling  
 
-**Database**  
+###Database  
 **MongoDB (NoSQL)** - Stores user data, song metadata, and session history  
 
 ## 📁 Project Structure
